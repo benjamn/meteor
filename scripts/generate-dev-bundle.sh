@@ -71,6 +71,57 @@ umask 022
 mkdir build
 cd build
 
+# Build reliable versions of autoconf and automake for watchman and
+# potentially other projects.
+
+AUTOCONF_VERSION="2.69"
+curl "http://ftp.gnu.org/gnu/autoconf/autoconf-$AUTOCONF_VERSION.tar.gz" | \
+    gzip -d | tar x
+pushd "autoconf-$AUTOCONF_VERSION"
+./configure
+make
+PATH="$DIR/build/autoconf-$AUTOCONF_VERSION/bin":$PATH
+popd
+
+AUTOMAKE_VERSION="1.14"
+curl "http://ftp.gnu.org/gnu/automake/automake-$AUTOMAKE_VERSION.tar.gz" | \
+    gzip -d | tar x
+pushd "automake-$AUTOMAKE_VERSION"
+./configure
+make
+PATH="$DIR/build/automake-$AUTOMAKE_VERSION/bin":$PATH
+popd
+
+PCRE_VERSION="8.36"
+curl "ftp://ftp.csx.cam.ac.uk/pub/software/programming/pcre/pcre-$PCRE_VERSION.tar.gz" | \
+    gzip -d | tar x
+pushd "pcre-$PCRE_VERSION"
+./configure --prefix="$DIR"
+make install
+popd
+
+# Add $DIR/bin to $PATH so we can use tools installed earlier when
+# building later tools (namely, pcre for watchman and node/npm for the
+# various NPM packages we install below).
+export PATH="$DIR/bin:$PATH"
+
+WATCHMAN_VERSION="3.0.0"
+curl "https://codeload.github.com/facebook/watchman/tar.gz/v$WATCHMAN_VERSION" | \
+    gzip -d | tar x
+pushd "watchman-$WATCHMAN_VERSION"
+./autogen.sh
+./configure --prefix="$DIR"
+make install
+strip "$DIR/bin/watchman"
+popd
+
+# Clean up some unnecessary megabytes of docs.
+rm -rf "$DIR/share/doc" "$DIR/share/man"
+
+which watchman
+
+exit 0
+
 # ios-sim is used to run iPhone simulator from the command-line. Doesn't make
 # sense to build it for linux.
 if [ "$OS" == "osx" ]; then
@@ -109,9 +160,6 @@ make -j4
 make install PORTABLE=1
 # PORTABLE=1 is a node hack to make npm look relative to itself instead
 # of hard coding the PREFIX.
-
-# export path so we use our new node for later builds
-export PATH="$DIR/bin:$PATH"
 
 which node
 
