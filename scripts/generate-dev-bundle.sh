@@ -180,7 +180,8 @@ rm -rf node_modules/browserstack-webdriver/lib/test
 
 npm install node-inspector@0.7.4
 
-npm install pathwatcher@2.3.3
+# TODO(ben) Switch back to NPM once this branch is merged upstream.
+npm install https://github.com/meteor/node-pathwatcher/tarball/unref-g_async
 
 npm install chalk@0.5.1
 
