@@ -236,7 +236,7 @@ HTML.flattenAttributes = function (attrs) {
 ////////////////////////////// TOHTML
 
 HTML.toHTML = function (content) {
-  return (new HTML.ToHTMLVisitor).visit(content);
+  return HTML.ToHTMLVisitor.getInstance().visit(content);
 };
 
 // Escaping modes for outputting text when generating HTML.
@@ -246,15 +246,6 @@ HTML.TEXTMODE = {
   ATTRIBUTE: 3
 };
 
-
 HTML.toText = function (content, textMode) {
-  if (! textMode)
-    throw new Error("textMode required for HTML.toText");
-  if (! (textMode === HTML.TEXTMODE.STRING ||
-         textMode === HTML.TEXTMODE.RCDATA ||
-         textMode === HTML.TEXTMODE.ATTRIBUTE))
-    throw new Error("Unknown textMode: " + textMode);
-
-  var visitor = new HTML.ToTextVisitor({textMode: textMode});;
-  return visitor.visit(content);
+  return HTML.ToTextVisitor.getInstance(textMode).visit(content);
 };

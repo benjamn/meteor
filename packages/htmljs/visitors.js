@@ -191,6 +191,25 @@ HTML.TransformingVisitor.def({
 
 
 HTML.ToTextVisitor = HTML.Visitor.extend();
+
+var toTextVisitors = {};
+HTML.ToTextVisitor.getInstance = function(textMode) {
+  if (! textMode)
+    throw new Error("textMode required for HTML.toText");
+
+  if (textMode !== HTML.TEXTMODE.STRING &&
+      textMode !== HTML.TEXTMODE.RCDATA &&
+      textMode !== HTML.TEXTMODE.ATTRIBUTE)
+    throw new Error("Unknown textMode: " + textMode);
+
+  return _hasOwnProperty.call(toTextVisitors, textMode)
+    ? toTextVisitors[textMode]
+    : toTextVisitors[textMode] =
+        new HTML.ToTextVisitor({
+          textMode: textMode
+        });
+};
+
 HTML.ToTextVisitor.def({
   visitNull: function (nullOrUndefined) {
     return '';
@@ -240,13 +259,18 @@ HTML.ToTextVisitor.def({
     throw new Error("Unexpected object in htmljs in toText: " + x);
   },
   toHTML: function (node) {
-    return HTML.toHTML(node);
+    return HTML.ToHTMLVisitor.getInstance().visit(node);
   }
 });
 
 
-
 HTML.ToHTMLVisitor = HTML.Visitor.extend();
+
+var toHTMLVisitor;
+HTML.ToHTMLVisitor.getInstance = function() {
+  return tohtmlvisitor || (tohtmlvisitor = new HTML.ToHTMLVisitor);
+};
+
 HTML.ToHTMLVisitor.def({
   visitNull: function (nullOrUndefined) {
     return '';
@@ -326,6 +350,6 @@ HTML.ToHTMLVisitor.def({
     throw new Error("Unexpected object in htmljs in toHTML: " + x);
   },
   toText: function (node, textMode) {
-    return HTML.toText(node, textMode);
+    return HTML.ToTextVisitor.getInstance(textMode).visit(node);
   }
 });
