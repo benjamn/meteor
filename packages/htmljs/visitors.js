@@ -1,5 +1,11 @@
 ////////////////////////////// VISITORS
 
+function _copy(arrayOrObject) {
+  return _.extend(
+    Object.create(Object.getPrototypeOf(arrayOrObject)),
+    arrayOrObject
+  );
+}
 
 HTML.Visitor = function (props) {
   _.extend(this, props);
@@ -23,7 +29,7 @@ HTML.Visitor.extend = function (options) {
 };
 
 HTML.Visitor.def({
-  visit: function (content/*, ...*/) {
+  visit: Promise.synchronize(function (content/*, ...*/) {
     if (content == null)
       // null or undefined.
       return this.visitNull.apply(this, arguments);
@@ -59,8 +65,7 @@ HTML.Visitor.def({
     }
 
     throw new Error("Unexpected object in htmljs: " + content);
-
-  },
+  }),
   visitNull: function (nullOrUndefined/*, ...*/) {},
   visitPrimitive: function (stringBooleanOrNumber/*, ...*/) {},
   visitArray: function (array/*, ...*/) {},
@@ -80,30 +85,25 @@ HTML.TransformingVisitor = HTML.Visitor.extend();
 HTML.TransformingVisitor.def({
   visitNull: IDENTITY,
   visitPrimitive: IDENTITY,
+
   visitArray: function (array/*, ...*/) {
     var argsCopy = SLICE.call(arguments);
-    var result = array;
-    for (var i = 0; i < array.length; i++) {
-      var oldItem = array[i];
+    return promiseMapCOW(array, function(oldItem) {
       argsCopy[0] = oldItem;
-      var newItem = this.visit.apply(this, argsCopy);
-      if (newItem !== oldItem) {
-        // copy `array` on write
-        if (result === array)
-          result = array.slice();
-        result[i] = newItem;
-      }
-    }
-    return result;
+      return this.visit.apply(this, argsCopy);
+    }, this);
   },
+
   visitComment: IDENTITY,
   visitCharRef: IDENTITY,
   visitRaw: IDENTITY,
   visitObject: IDENTITY,
   visitFunction: IDENTITY,
+
   visitTag: function (tag/*, ...*/) {
     var oldChildren = tag.children;
     var argsCopy = SLICE.call(arguments);
+
     argsCopy[0] = oldChildren;
     var newChildren = this.visitChildren.apply(this, argsCopy);
 
@@ -111,35 +111,33 @@ HTML.TransformingVisitor.def({
     argsCopy[0] = oldAttrs;
     var newAttrs = this.visitAttributes.apply(this, argsCopy);
 
-    if (newAttrs === oldAttrs && newChildren === oldChildren)
-      return tag;
-
-    var newTag = HTML.getTag(tag.tagName).apply(null, newChildren);
-    newTag.attrs = newAttrs;
-    return newTag;
+    return Promise.all([
+      newChildren,
+      newAttrs
+    ]).spread(function(newChildren, newAttrs) {
+      if (newAttrs === oldAttrs &&
+          newChildren === oldChildren)
+        return tag;
+      var newTag = HTML.getTag(tag.tagName).apply(null, newChildren);
+      newTag.attrs = newAttrs;
+      return newTag;
+    });
   },
+
   visitChildren: function (children/*, ...*/) {
     return this.visitArray.apply(this, arguments);
   },
+
   // Transform the `.attrs` property of a tag, which may be a dictionary,
   // an array, or in some uses, a foreign object (such as
   // a template tag).
   visitAttributes: function (attrs/*, ...*/) {
     if (HTML.isArray(attrs)) {
       var argsCopy = SLICE.call(arguments);
-      var result = attrs;
-      for (var i = 0; i < attrs.length; i++) {
-        var oldItem = attrs[i];
+      return promiseMapCOW(attrs, function(oldItem) {
         argsCopy[0] = oldItem;
-        var newItem = this.visitAttributes.apply(this, argsCopy);
-        if (newItem !== oldItem) {
-          // copy on write
-          if (result === attrs)
-            result = attrs.slice();
-          result[i] = newItem;
-        }
-      }
-      return result;
+        return this.visitAttributes.apply(this, argsCopy);
+      }, this);
     }
 
     if (attrs && HTML.isConstructedObject(attrs)) {
@@ -153,22 +151,16 @@ HTML.TransformingVisitor.def({
     if (oldAttrs) {
       var attrArgs = [null, null];
       attrArgs.push.apply(attrArgs, arguments);
-      for (var k in oldAttrs) {
-        var oldValue = oldAttrs[k];
+      return promiseMapCOW(oldAttrs, function(oldValue, k) {
         attrArgs[0] = k;
         attrArgs[1] = oldValue;
-        var newValue = this.visitAttribute.apply(this, attrArgs);
-        if (newValue !== oldValue) {
-          // copy on write
-          if (newAttrs === oldAttrs)
-            newAttrs = _.extend({}, oldAttrs);
-          newAttrs[k] = newValue;
-        }
-      }
+        return this.visitAttribute.apply(this, attrArgs);
+      }, this);
     }
 
-    return newAttrs;
+    return Promise.resolve(newAttrs);
   },
+
   // Transform the value of one attribute name/value in an
   // attributes dictionary.
   visitAttribute: function (name, value, tag/*, ...*/) {
@@ -178,6 +170,23 @@ HTML.TransformingVisitor.def({
   }
 });
 
+function promiseMapCOW(iterable, fn, context) {
+  var result = iterable;
+  return Promise.all(_.map(iterable, function(oldValue, key) {
+    return Promise.resolve(
+      fn.call(context || null, oldValue, key)
+    ).then(function(newValue) {
+      if (newValue !== oldValue) {
+        if (result === iterable) {
+          result = _copy(iterable);
+        }
+        result[key] = newValue;
+      }
+    });
+  })).then(function() {
+    return result;
+  });
+}
 
 HTML.ToTextVisitor = HTML.Visitor.extend();
 
@@ -203,6 +212,7 @@ HTML.ToTextVisitor.def({
   visitNull: function (nullOrUndefined) {
     return '';
   },
+
   visitPrimitive: function (stringBooleanOrNumber) {
     var str = String(stringBooleanOrNumber);
     if (this.textMode === HTML.TEXTMODE.RCDATA) {
@@ -214,15 +224,15 @@ HTML.ToTextVisitor.def({
       return str;
     }
   },
+
   visitArray: function (array) {
-    var parts = [];
-    for (var i = 0; i < array.length; i++)
-      parts.push(this.visit(array[i]));
-    return parts.join('');
+    return Promise.join(_.map(array, this.visit, this), '');
   },
+
   visitComment: function (comment) {
     throw new Error("Can't have a comment here");
   },
+
   visitCharRef: function (charRef) {
     if (this.textMode === HTML.TEXTMODE.RCDATA ||
         this.textMode === HTML.TEXTMODE.ATTRIBUTE) {
@@ -231,9 +241,11 @@ HTML.ToTextVisitor.def({
       return charRef.str;
     }
   },
+
   visitRaw: function (raw) {
     return raw.value;
   },
+
   visitTag: function (tag) {
     // Really we should just disallow Tags here.  However, at the
     // moment it's useful to stringify any HTML we find.  In
@@ -244,9 +256,11 @@ HTML.ToTextVisitor.def({
     // in templates by parsing them and stringifying them.
     return this.visit(this.toHTML(tag));
   },
+
   visitObject: function (x) {
     throw new Error("Unexpected object in htmljs in toText: " + x);
   },
+
   toHTML: function (node) {
     return HTML.ToHTMLVisitor.getInstance().visit(node);
   }
@@ -269,10 +283,7 @@ HTML.ToHTMLVisitor.def({
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;');
   },
   visitArray: function (array) {
-    var parts = [];
-    for (var i = 0; i < array.length; i++)
-      parts.push(this.visit(array[i]));
-    return parts.join('');
+    return Promise.join(_.map(array, this.visit, this), '');
   },
   visitComment: function (comment) {
     return '<!--' + comment.sanitizedValue + '-->';

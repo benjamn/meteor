@@ -1,7 +1,7 @@
 HTML = {};
 
 Promise = Npm.require("bluebird");
-IDENTITY = function (x) { return x; };
+IDENTITY = function (x) { return Promise.resolve(x); };
 SLICE = Array.prototype.slice;
 
 var promiseLoopStack = [];
