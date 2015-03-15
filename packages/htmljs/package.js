@@ -5,6 +5,7 @@ Package.describe({
 
 Package.onUse(function (api) {
   api.use('deps');
+  api.use('underscore');
   api.export('HTML');
 
   api.addFiles(['preamble.js',

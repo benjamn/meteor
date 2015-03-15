@@ -1,23 +1,12 @@
 ////////////////////////////// VISITORS
 
-// _assign is like _.extend or the upcoming Object.assign.
-// Copy src's own, enumerable properties onto tgt and return
-// tgt.
-var _hasOwnProperty = Object.prototype.hasOwnProperty;
-var _assign = function (tgt, src) {
-  for (var k in src) {
-    if (_hasOwnProperty.call(src, k))
-      tgt[k] = src[k];
-  }
-  return tgt;
-};
 
 HTML.Visitor = function (props) {
-  _assign(this, props);
+  _.extend(this, props);
 };
 
 HTML.Visitor.def = function (options) {
-  _assign(this.prototype, options);
+  _.extend(this.prototype, options);
 };
 
 HTML.Visitor.extend = function (options) {
@@ -29,7 +18,7 @@ HTML.Visitor.extend = function (options) {
   subType.extend = curType.extend;
   subType.def = curType.def;
   if (options)
-    _assign(subType.prototype, options);
+    _.extend(subType.prototype, options);
   return subType;
 };
 
@@ -172,7 +161,7 @@ HTML.TransformingVisitor.def({
         if (newValue !== oldValue) {
           // copy on write
           if (newAttrs === oldAttrs)
-            newAttrs = _assign({}, oldAttrs);
+            newAttrs = _.extend({}, oldAttrs);
           newAttrs[k] = newValue;
         }
       }
@@ -202,7 +191,7 @@ HTML.ToTextVisitor.getInstance = function(textMode) {
       textMode !== HTML.TEXTMODE.ATTRIBUTE)
     throw new Error("Unknown textMode: " + textMode);
 
-  return _hasOwnProperty.call(toTextVisitors, textMode)
+  return _.has(toTextVisitors, textMode)
     ? toTextVisitors[textMode]
     : toTextVisitors[textMode] =
         new HTML.ToTextVisitor({
