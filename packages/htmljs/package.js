@@ -3,6 +3,10 @@ Package.describe({
   version: '1.0.4'
 });
 
+Npm.depends({
+  "bluebird": "2.9.14"
+});
+
 Package.onUse(function (api) {
   api.use('deps');
   api.use('underscore');
