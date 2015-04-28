@@ -15,14 +15,17 @@ Babel.transformMeteor = function (code, extraOptions) {
       "es6.parameters.default",
       "es6.spread",
       "es6.destructuring",
+      "es6.modules",
       "flow"
     ],
+
     externalHelpers: true,
+
     // "Loose" mode gets us faster and more IE-compatible transpilations of:
     // classes, computed properties, modules, for-of, and template literals.
     // Basically all the transformers that support "loose".
     // http://babeljs.io/docs/usage/loose/
-    loose: "all"
+    loose: ["es6.modules", "all"]
   };
 
   return Babel.transform(code, _.extend(options, extraOptions));

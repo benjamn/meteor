@@ -22,6 +22,7 @@ Package.onUse(function (api) {
   api.addFiles('client_environment.js', 'client');
   api.addFiles('cordova_environment.js', 'web.cordova');
   api.addFiles('server_environment.js', 'server');
+  api.addFiles('module_system.js', ['client', 'server'], { bare: true });
   api.addFiles('helpers.js', ['client', 'server']);
   api.addFiles('setimmediate.js', ['client', 'server']);
   api.addFiles('timers.js', ['client', 'server']);

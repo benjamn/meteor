@@ -1,3 +1,5 @@
+var _hasOwnProperty = Object.prototype.hasOwnProperty;
+
 // The name `babelHelpers` is hard-coded in Babel.  Otherwise we would make it
 // something capitalized and more descriptive, like `BabelRuntime`.
 babelHelpers = {
@@ -70,7 +72,31 @@ babelHelpers = {
         }
       }
     }
+  },
+
+  interopRequire: function (obj) {
+    return obj && obj.__esModule ? obj["default"] : obj;
+  },
+
+  interopRequireDefault: function (obj) {
+    return obj && obj.__esModule ? obj : { "default": obj };
+  },
+
+  interopRequireWildcard: function (obj) {
+    if (obj && obj.__esModule) {
+      return obj;
+    }
+
+    var newObj = {};
+    if (obj != null) {
+      for (var key in obj) {
+        if (_hasOwnProperty.call(obj, key)) {
+          newObj[key] = obj[key];
+        }
+      }
+    }
+
+    newObj["default"] = obj;
+    return newObj;
   }
 };
-
-var _hasOwnProperty = Object.prototype.hasOwnProperty;

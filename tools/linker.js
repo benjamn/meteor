@@ -304,18 +304,6 @@ _.extend(File.prototype, {
     }
   },
 
-
-  // Relative path to use in source maps to indicate this file. No
-  // leading slash.
-  _pathForSourceMap: function () {
-    var self = this;
-
-    if (self.module.name)
-      return self.module.name + "/" + self.sourcePath;
-    else
-      return require('path').basename(self.sourcePath);
-  },
-
   // Options:
   // - preserveLineNumbers: if true, decorate minimally so that line
   //   numbers don't change between input and output. In this case,
@@ -329,8 +317,7 @@ _.extend(File.prototype, {
     var self = this;
     var SMG = sourcemap.SourceMapGenerator;;
     var SMC = sourcemap.SourceMapConsumer;
-    var SN = sourcemap.SourceNode;;
-    var path = self._pathForSourceMap();
+    var SN = sourcemap.SourceNode;
     var width = options.sourceWidth || 70;
     var bannerWidth = width + 3;
     var padding = bannerPadding(bannerWidth);
@@ -354,11 +341,11 @@ _.extend(File.prototype, {
         smg.addMapping({
           original: start,
           generated: start,
-          source: path
+          source: self.servePath
         });
       });
 
-      smg.setSourceContent(path, self.source);
+      smg.setSourceContent(self.servePath, self.source);
 
       result = {
         code: self.source,
@@ -398,13 +385,20 @@ _.extend(File.prototype, {
     }
 
     var chunks = [];
+    var pathNoSlash = self.servePath.replace(/^\//, "");
 
     if (! self.bare) {
-      chunks.push("(function () {\n\n");
+      if (self._canUseMeteorDef()) {
+        chunks.push("Meteor.def(" +
+                    JSON.stringify(pathNoSlash) +
+                    ", function (require, exports, module) {\n\n");
+      } else {
+        chunks.push("(function () {\n\n");
+      }
     }
 
     // Banner
-    var bannerLines = [self.servePath.replace(/^\//, "")];
+    var bannerLines = [pathNoSlash];
     if (self.bare) {
       bannerLines.push(
         "This file is in bare mode and is not in its own closure.");
@@ -423,10 +417,27 @@ _.extend(File.prototype, {
 
     // Footer
     if (! self.bare) {
-      chunks.push(dividerLine(bannerWidth) + "\n}).call(this);\n");
+      chunks.push(dividerLine(bannerWidth) + (
+        self._canUseMeteorDef()
+          ? "\n});\n"
+          : "\n}).call(this);\n"
+      ));
     }
 
     return new SN(null, null, null, chunks);
+  },
+
+  _canUseMeteorDef: function () {
+    var packageName = this.module.name;
+    return packageName !== "meteor" &&
+      packageName !== "js-analyze" &&
+      packageName !== "babel" &&
+      packageName !== "jquery" &&
+      packageName !== "underscore" &&
+      packageName !== "package-version-parser" &&
+      packageName !== "logic-solver" &&
+      packageName !== "basicFileTypes" &&
+      packageName !== "compileTemplates";
   }
 });
 

@@ -181,17 +181,16 @@ function jsSourceHandler (compileStep) {
 function esSourceHandler (compileStep) {
   var Babel = isopackets.load("babel").babel.Babel;
   var source = compileStep.read().toString("utf8");
-  var outputFile = compileStep.inputPath + ".js";
 
   var result = Babel.transformMeteor(source, {
     sourceMaps: true,
-    sourceFileName: compileStep.pathForSourceMap,
-    sourceMapName: compileStep.pathForSourceMap
+    sourceFileName: "/" + compileStep.inputPath,
+    sourceMapName: "/" + compileStep.inputPath + ".map"
   });
 
   compileStep.addJavaScript({
     data: result.code,
-    path: outputFile,
+    path: compileStep.inputPath,
     sourcePath: compileStep.inputPath,
     sourceMap: JSON.stringify(result.map)
   });
