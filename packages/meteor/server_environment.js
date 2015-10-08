@@ -1,8 +1,6 @@
-Meteor = {
-  isClient: false,
-  isServer: true,
-  isCordova: false
-};
+Meteor.isClient = false;
+Meteor.isServer = true;
+Meteor.isCordova = false;
 
 Meteor.settings = {};
 

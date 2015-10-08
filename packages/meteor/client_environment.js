@@ -1,26 +1,19 @@
 /**
- * @summary The Meteor namespace
- * @namespace Meteor
+ * @summary Boolean variable.  True if running in client environment.
+ * @locus Anywhere
+ * @static
+ * @type {Boolean}
  */
-Meteor = {
+Meteor.isClient = true;
 
-  /**
-   * @summary Boolean variable.  True if running in client environment.
-   * @locus Anywhere
-   * @static
-   * @type {Boolean}
-   */
-  isClient: true,
-
-  /**
-   * @summary Boolean variable.  True if running in server environment.
-   * @locus Anywhere
-   * @static
-   * @type {Boolean}
-   */
-  isServer: false,
-  isCordova: false
-};
+/**
+ * @summary Boolean variable.  True if running in server environment.
+ * @locus Anywhere
+ * @static
+ * @type {Boolean}
+ */
+Meteor.isServer = false;
+Meteor.isCordova = false;
 
 if (typeof __meteor_runtime_config__ === 'object' &&
     __meteor_runtime_config__.PUBLIC_SETTINGS) {

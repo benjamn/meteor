@@ -26,6 +26,7 @@ Package.onUse(function (api) {
 
   api.export('Meteor');
 
+  api.addFiles('common_environment.js', ['client', 'server']);
   api.addFiles('client_environment.js', 'client');
   api.addFiles('cordova_environment.js', 'web.cordova');
   api.addFiles('server_environment.js', 'server');
@@ -58,6 +59,7 @@ Package.onUse(function (api) {
 Package.onTest(function (api) {
   api.use(['underscore', 'tinytest', 'test-helpers']);
 
+  api.addFiles('common_environment_test.js', ['client', 'server']);
   api.addFiles('browser_environment_test.js', 'web.browser');
   api.addFiles('client_environment_test.js', 'client');
   api.addFiles('cordova_environment_test.js', 'web.cordova');
