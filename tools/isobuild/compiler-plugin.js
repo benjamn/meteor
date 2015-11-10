@@ -404,10 +404,13 @@ class ResourceSlot {
       // XXX do we need to call convertSourceMapPaths here like we did
       //     in legacy handlers?
       sourceMap: options.sourceMap,
-      // By default, use the 'bare' and 'lazy' options given to addFiles,
-      // but allow the options passed to addJavaScript to override them.
+      // By default, use the options given to addFiles, but allow the
+      // options passed to addJavaScript to override them.
       lazy: !! (_.has(options, "lazy") ? options : fileOptions).lazy,
       bare: !! (_.has(options, "bare") ? options : fileOptions).bare,
+      mainModule: !! (
+        _.has(options, "mainModule") ? options : fileOptions
+      ).mainModule
     });
   }
 
