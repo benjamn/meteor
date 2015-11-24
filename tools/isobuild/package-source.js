@@ -1148,6 +1148,13 @@ _.extend(PackageSource.prototype, {
     }
   },
 
+  _readAndWatchDirectory(relDir, watchSet, {include, exclude, names}) {
+    return watch.readAndWatchDirectory(watchSet, {
+      absPath: files.pathJoin(this.sourceRoot, relDir),
+      include, exclude, names
+    }).map(name => files.pathJoin(relDir, name));
+  },
+
   // Initialize a package from an application directory (has .meteor/packages).
   initFromAppDir: Profile("initFromAppDir", function (projectContext, ignoreFiles) {
     var self = this;
@@ -1188,23 +1195,19 @@ _.extend(PackageSource.prototype, {
         getFiles(sourceProcessorSet, watchSet) {
           const sourceReadOptions =
             sourceProcessorSet.appReadDirectoryOptions(arch);
+
+          sourceProcessorSet.watchSet = watchSet;
+
           // Ignore files starting with dot (unless they are explicitly in
           // 'names').
           sourceReadOptions.exclude.push(/^\./);
           // Ignore the usual ignorable files.
           sourceReadOptions.exclude.push(...ignoreFiles);
 
-          // Wrapper around watch.readAndWatchDirectory which takes in and returns
-          // sourceRoot-relative directories.
-          var readAndWatchDirectory = (relDir, {include, exclude, names}) => {
-            var absPath = files.pathJoin(self.sourceRoot, relDir);
-            var contents = watch.readAndWatchDirectory(
-              watchSet, {absPath, include, exclude, names});
-            return contents.map(x => files.pathJoin(relDir, x));
-          };
-
           // Read top-level source files.
-          var sources = readAndWatchDirectory('', sourceReadOptions);
+          var sources = self._readAndWatchDirectory(
+            '', watchSet, sourceReadOptions
+          );
 
           // don't include watched but not included control files
           sources = _.difference(sources, controlFiles);
@@ -1237,7 +1240,7 @@ _.extend(PackageSource.prototype, {
 
           // Read top-level subdirectories. Ignore subdirectories that have
           // special handling.
-          var sourceDirectories = readAndWatchDirectory('', {
+          var sourceDirectories = self._readAndWatchDirectory('', watchSet, {
             include: [/\/$/],
             exclude: [/^packages\/$/, /^tests\/$/,
                       // XXX We no longer actually have special handling
@@ -1267,11 +1270,13 @@ _.extend(PackageSource.prototype, {
             }
 
             // Find source files in this directory.
-            sources.push(...readAndWatchDirectory(dir, sourceReadOptions));
+            sources.push(...self._readAndWatchDirectory(
+              dir, watchSet, sourceReadOptions
+            ));
 
             // Find sub-sourceDirectories. Note that we DON'T need to ignore the
             // directory names that are only special at the top level.
-            sourceDirectories.push(...readAndWatchDirectory(dir, {
+            sourceDirectories.push(...self._readAndWatchDirectory(dir, watchSet, {
               include: [/\/$/],
               exclude: [/^tests\/$/, otherUnibuildRegExp].concat(
                 sourceReadOptions.exclude)
@@ -1301,7 +1306,9 @@ _.extend(PackageSource.prototype, {
 
           // Now look for assets for this unibuild.
           const assetDir = archinfo.matches(arch, "web") ? "public/" : "private/";
-          var assetDirs = readAndWatchDirectory('', {names: [assetDir]});
+          var assetDirs = self._readAndWatchDirectory('', watchSet, {
+            names: [assetDir]
+          });
 
           const assets = [];
 
@@ -1321,7 +1328,7 @@ _.extend(PackageSource.prototype, {
               }
 
               // Find asset files in this directory.
-              var assetsAndSubdirs = readAndWatchDirectory(dir, {
+              var assetsAndSubdirs = self._readAndWatchDirectory(dir, watchSet, {
                 include: [/.?/],
                 // we DO look under dot directories here
                 exclude: ignoreFiles
