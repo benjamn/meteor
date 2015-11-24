@@ -189,6 +189,39 @@ var getExcerptFromReadme = function (text) {
   return excerpt.replace(/^\n+|\n+$/g, "");
 };
 
+class SymlinkLoopChecker {
+  constructor(sourceRoot) {
+    this.sourceRoot = sourceRoot;
+    this._seenPaths = {};
+    this._realpathCache = {};
+  }
+
+  check(relDir, quietly) {
+    const absPath = files.pathJoin(this.sourceRoot, relDir);
+
+    try {
+      var realPath = files.realpath(absPath, this._realpathCache);
+    } catch (e) {
+      if (!e || e.code !== 'ELOOP') {
+        throw e;
+      }
+      // else leave realPath undefined
+    }
+
+    if (realPath === undefined || _.has(this._seenPaths, realPath)) {
+      if (! quietly) {
+        buildmessage.error("Symlink cycle detected at " + relDir);
+      }
+
+      return true;
+    }
+
+    this._seenPaths[realPath] = true;
+
+    return false;
+  }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PackageSource
 ///////////////////////////////////////////////////////////////////////////////
@@ -1215,28 +1248,7 @@ _.extend(PackageSource.prototype, {
           var otherUnibuildRegExp =
             (arch === "os" ? /^client\/$/ : /^server\/$/);
 
-          // The paths that we've called checkForInfiniteRecursion on.
-          var seenPaths = {};
-          // Used internally by files.realpath as an optimization.
-          var realpathCache = {};
-          var checkForInfiniteRecursion = function (relDir) {
-            var absPath = files.pathJoin(self.sourceRoot, relDir);
-            try {
-              var realpath = files.realpath(absPath, realpathCache);
-            } catch (e) {
-              if (!e || e.code !== 'ELOOP') {
-                throw e;
-              }
-              // else leave realpath undefined
-            }
-            if (realpath === undefined || _.has(seenPaths, realpath)) {
-              buildmessage.error("Symlink cycle detected at " + relDir);
-              // recover by returning no files
-              return true;
-            }
-            seenPaths[realpath] = true;
-            return false;
-          };
+          const loopChecker = new SymlinkLoopChecker(self.sourceRoot);
 
           // Read top-level subdirectories. Ignore subdirectories that have
           // special handling.
@@ -1256,7 +1268,8 @@ _.extend(PackageSource.prototype, {
                       /^cordova-build-override\/$/,
                       otherUnibuildRegExp].concat(sourceReadOptions.exclude)
           });
-          checkForInfiniteRecursion('');
+
+          loopChecker.check('');
 
           while (!_.isEmpty(sourceDirectories)) {
             var dir = sourceDirectories.shift();
@@ -1264,7 +1277,7 @@ _.extend(PackageSource.prototype, {
             // remove trailing slash
             dir = dir.substr(0, dir.length - 1);
 
-            if (checkForInfiniteRecursion(dir)) {
+            if (loopChecker.check(dir)) {
               // pretend we found no files
               return [];
             }
@@ -1322,7 +1335,7 @@ _.extend(PackageSource.prototype, {
               // remove trailing slash
               dir = dir.substr(0, dir.length - 1);
 
-              if (checkForInfiniteRecursion(dir)) {
+              if (loopChecker.check(dir)) {
                 // pretend we found no files
                 return [];
               }
