@@ -361,13 +361,6 @@ exports.makeCompileStep = function (sourceItem, file, inputSourceArch, options) 
         throw new Error("'sourcePath' option must be supplied to addJavaScript. Consider passing inputPath.");
       }
 
-      // By default, use fileOptions for the `bare` option but also allow
-      // overriding it with the options
-      var bare = fileOptions.bare;
-      if (options.hasOwnProperty("bare")) {
-        bare = options.bare;
-      }
-
       var data = new Buffer(
         files.convertToStandardLineEndings(options.data), 'utf8');
       resources.push({
@@ -384,7 +377,10 @@ exports.makeCompileStep = function (sourceItem, file, inputSourceArch, options) 
         hash: watch.sha1(data),
         sourceMap: convertSourceMapPaths(options.sourceMap,
                                          files.convertToStandardPath),
-        bare: !! bare
+        // By default, use fileOptions for these options but also allow
+        // overriding them with the options.
+        bare: !! (_.has(options, "bare") ? options : fileOptions).bare,
+        lazy: !! (_.has(options, "lazy") ? options : fileOptions).lazy,
       });
     },
 
