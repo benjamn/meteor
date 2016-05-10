@@ -36,7 +36,7 @@ var packageJson = {
     "browserstack-webdriver": "2.41.1",
     "node-inspector": "0.12.8",
     chalk: "0.5.1",
-    sqlite3: "3.1.3",
+    sqlite3: "https://github.com/zakdances/node-sqlite3/tarball/6e73dbcc84cf7aacdd866a4a5cbea3b759a3ed58",
     netroute: "1.0.2",
     "phantomjs-prebuilt": "2.1.7",
     "http-proxy": "1.11.1",
