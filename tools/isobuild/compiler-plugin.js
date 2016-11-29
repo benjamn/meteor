@@ -179,17 +179,29 @@ export class CompilerPluginProcessor {
         buildmessage.enterJob({
           title: jobTitle
         }, function () {
-          var inputFiles = _.map(resourceSlots, function (resourceSlot) {
-            return new InputFile(resourceSlot);
-          });
+          let processOne = sourceProcessor.userPlugin.processOneFileForTarget;
+          if (typeof processOne === "function") {
+            processOne = buildmessage.markBoundary(
+              processOne.bind(sourceProcessor.userPlugin));
 
-          var markedMethod = buildmessage.markBoundary(
-            sourceProcessor.userPlugin.processFilesForTarget.bind(
-              sourceProcessor.userPlugin));
-          try {
-            markedMethod(inputFiles);
-          } catch (e) {
-            buildmessage.exception(e);
+            resourceSlots.forEach(slot => {
+              const inputFile = new InputFile(slot);
+              inputFile.addLazyJavaScript(processOne);
+            });
+
+          } else {
+            var inputFiles = _.map(resourceSlots, function (resourceSlot) {
+              return new InputFile(resourceSlot);
+            });
+
+            var markedMethod = buildmessage.markBoundary(
+              sourceProcessor.userPlugin.processFilesForTarget.bind(
+                sourceProcessor.userPlugin));
+            try {
+              markedMethod(inputFiles);
+            } catch (e) {
+              buildmessage.exception(e);
+            }
           }
         });
       });
@@ -474,6 +486,11 @@ class InputFile extends buildPluginModule.InputFile {
     self._resourceSlot.addJavaScript(options);
   }
 
+  addLazyJavaScript(processOneFileForTarget) {
+    return this._resourceSlot.addLazyJavaScript(
+      () => processOneFileForTarget(this));
+  }
+
   /**
    * @summary Add a file to serve as-is to the browser or to include on
    * the browser, depending on the target. On the web, it will be served
@@ -678,7 +695,43 @@ class ResourceSlot {
     }
   }
 
-  addJavaScript(options) {
+  addLazyJavaScript(getter) {
+    const self = this;
+
+    self.addJavaScript({});
+    const index = self.jsOutputResources.length - 1;
+    const resource = self.jsOutputResources[index];
+
+    function force() {
+      if (getter) {
+        self.addJavaScript(getter(), index); // TODO null?
+        getter = null;
+        return true;
+      }
+    }
+
+    function defineGetter(name) {
+      Object.defineProperty(resource, name, {
+        get() {
+          // Remove the getter property.
+          delete resource[name];
+          // Fully populate the resource.
+          force();
+          // Return the actual value, if populated.
+          return resource[name];
+        },
+
+        configurable: true,
+        enumerable: true
+      });
+    }
+
+    defineGetter("data");
+    defineGetter("hash");
+    defineGetter("sourceMap");
+  }
+
+  addJavaScript(options, index = this.jsOutputResources.length) {
     const self = this;
     // #HardcodeJs this gets called by constructor in the "js" case
     if (! self.sourceProcessor && self.inputResource.extension !== "js") {
@@ -693,26 +746,32 @@ class ResourceSlot {
 
     const targetPath = options.path || sourcePath;
 
-    var data = new Buffer(
-      files.convertToStandardLineEndings(options.data), 'utf8');
+    const resource = self.jsOutputResources[index] ||
+      (self.jsOutputResources[index] = {});
 
-    self.jsOutputResources.push({
-      type: "js",
-      data: data,
-      sourcePath,
-      targetPath,
-      servePath: self.packageSourceBatch.unibuild.pkg._getServePath(targetPath),
-      // XXX should we allow users to be trusted and specify a hash?
-      hash: sha1(data),
+    if (options.data) {
+      resource.data = new Buffer(
+        files.convertToStandardLineEndings(options.data), 'utf8');
+      resource.hash = sha1(resource.data);
+    }
+
+    resource.type = "js";
+    resource.sourcePath = sourcePath;
+    resource.targetPath = targetPath;
+    resource.servePath =
+      self.packageSourceBatch.unibuild.pkg._getServePath(targetPath);
       // XXX do we need to call convertSourceMapPaths here like we did
       //     in legacy handlers?
-      sourceMap: options.sourceMap,
-      // intentionally preserve a possible `undefined` value for files
-      // in apps, rather than convert it into `false` via `!!`
-      lazy: self._isLazy(options),
-      bare: !! self._getOption("bare", options),
-      mainModule: !! self._getOption("mainModule", options),
-    });
+
+    if (options.sourceMap) {
+      resource.sourceMap = options.sourceMap;
+    }
+
+    // intentionally preserve a possible `undefined` value for files
+    // in apps, rather than convert it into `false` via `!!`
+    resource.lazy = self._isLazy(options);
+    resource.bare = !! self._getOption("bare", options);
+    resource.mainModule = !! self._getOption("mainModule", options);
   }
 
   addAsset(options) {
