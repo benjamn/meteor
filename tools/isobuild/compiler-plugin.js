@@ -1116,7 +1116,10 @@ export class PackageSourceBatch {
 
     scannerMap.forEach((scanner, name) => {
       const isApp = ! name;
-      const outputFiles = scanner.getOutputFiles();
+      const dynamicFiles = [];
+      const outputFiles = scanner.getOutputFiles({
+        dynamicFiles,
+      });
 
       if (isApp) {
         const appFilesWithoutNodeModules = [];
@@ -1146,6 +1149,13 @@ export class PackageSourceBatch {
 
       } else {
         map.get(name).files = outputFiles;
+      }
+
+      if (dynamicFiles.length > 0) {
+        // Note that we do not bother moving dynamic node_modules files to
+        // the modules package, because they do not have to be
+        // synchronously available to other packages.
+        map.get(name).dynamicFiles = dynamicFiles;
       }
     });
 
@@ -1244,6 +1254,7 @@ export class PackageSourceBatch {
   // linker-style imports and exports.
   getResources({
     files: jsResources,
+    dynamicFiles,
     importExtensions = [".js", ".json"],
   }) {
     buildmessage.assertInJob();
@@ -1259,6 +1270,22 @@ export class PackageSourceBatch {
     ), this.useMeteorInstall && {
       extensions: importExtensions
     }));
+
+    if (dynamicFiles) {
+      dynamicFiles.forEach(file => {
+        resources.push({
+          type: "js",
+          data: file.data,
+          servePath: "dynamic/" + file.installPath,
+          sourceMap: file.sourceMap || null,
+          importInfo: {
+            dynamic: true,
+            deps: file.deps,
+            extensions: importExtensions
+          },
+        });
+      });
+    }
 
     return resources;
   }
