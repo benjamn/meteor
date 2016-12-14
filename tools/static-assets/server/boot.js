@@ -132,6 +132,33 @@ var specialArgPaths = {
       npmRequire: npmRequire,
       Profile: Profile
     };
+  },
+
+  "packages/code-splitting.js": function (file) {
+    var clientJsonPath =
+      path.resolve(configJson.clientPaths["web.browser"]);
+
+    var dynamicImportInfo = {};
+
+    if (serverJson.dynamic) {
+      dynamicImportInfo.server = {
+        sourceRoot: serverDir,
+        manifest: serverJson.dynamic
+      };
+    }
+
+    Object.keys(configJson.clientPaths).forEach(function (key) {
+      var programJsonPath = path.resolve(configJson.clientPaths[key]);
+      var programJson = require(programJsonPath);
+      if (programJson.dynamic) {
+        dynamicImportInfo[key] = {
+          sourceRoot: path.dirname(programJsonPath),
+          manifest: programJson.dynamic
+        };
+      }
+    });
+
+    return { dynamicImportInfo: dynamicImportInfo };
   }
 };
 
