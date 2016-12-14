@@ -331,7 +331,17 @@ export default class ImportScanner {
     oldFile.dataString = combinedDataString;
     oldFile.data = new Buffer(oldFile.dataString, "utf8");
     oldFile.hash = sha1(oldFile.data);
-    oldFile.imported = oldFile.imported || newFile.imported;
+
+    // If either oldFile or newFile has been imported non-dynamically,
+    // then oldFile.imported needs to be === true. Otherwise we simply set
+    // oldFile.imported = oldFile.imported || newFile.imported, which
+    // could be either false, "dynamic", or "fake" (see addNodeModules).
+    oldFile.imported =
+      oldFile.imported === true ||
+      newFile.imported === true ||
+      oldFile.imported ||
+      newFile.imported;
+
     oldFile.sourceMap = combinedSourceMap.toJSON();
     if (! oldFile.sourceMap.mappings) {
       oldFile.sourceMap = null;
@@ -341,7 +351,7 @@ export default class ImportScanner {
   scanImports() {
     this.outputFiles.forEach(file => {
       if (! file.lazy || file.imported) {
-        this._scanFile(file);
+        this._scanFile(file, file.imported === "dynamic");
       }
     });
 
@@ -363,6 +373,11 @@ export default class ImportScanner {
       try {
         this._scanFile({
           sourcePath: "fake.js",
+          // It's important that the fake.js file itself never gets
+          // scanned or bundled. See the _scanFile and getOutputFiles
+          // methods for logic that deals with file.imported values.
+          imported: "fake",
+          lazy: true,
           // By specifying the .deps property of this fake file ahead of
           // time, we can avoid calling findImportedModuleIdentifiers in the
           // _scanFile method.
@@ -399,11 +414,22 @@ export default class ImportScanner {
   }
 
   getOutputFiles(options) {
-    // Return all installable output files that are either eager or
-    // imported by another module.
-    return this.outputFiles.filter(file => {
-      return file.installPath && (! file.lazy || file.imported);
+    const outputFiles = [];
+    const dynamicFiles = options && options.dynamicFiles;
+
+    this.outputFiles.forEach(file => {
+      if (file.installPath) {
+        if (! file.lazy || file.imported === true) {
+          // Return all installable output files that are either eager or
+          // imported statically (i.e., non-dynamically).
+          outputFiles.push(file);
+        } else if (dynamicFiles && file.imported === "dynamic") {
+          dynamicFiles.push(file);
+        }
+      }
     });
+
+    return outputFiles;
   }
 
   _getSourcePath(file) {
@@ -462,23 +488,23 @@ export default class ImportScanner {
     return result;
   }
 
-  _resolve(id, absPath) {
+  _resolve(id, absPath, forDynamicImport = false) {
     const resolved = this.resolver.resolve(id, absPath);
 
     if (resolved === "missing") {
-      return this._onMissing(id, absPath);
+      return this._onMissing(id, absPath, forDynamicImport);
     }
 
     if (resolved && resolved.packageJsonMap) {
       each(resolved.packageJsonMap, (pkg, path) => {
-        this._addPkgJsonToOutput(path, pkg);
+        this._addPkgJsonToOutput(path, pkg, forDynamicImport);
       });
     }
 
     return resolved;
   }
 
-  _scanFile(file) {
+  _scanFile(file, forDynamicImport = false) {
     const absPath = pathJoin(this.sourceRoot, file.sourcePath);
 
     try {
@@ -496,7 +522,8 @@ export default class ImportScanner {
     }
 
     each(file.deps, (info, id) => {
-      const resolved = this._resolve(id, absPath);
+      const dynamic = forDynamicImport || info.dynamic;
+      const resolved = this._resolve(id, absPath, dynamic);
       if (! resolved) {
         return;
       }
@@ -509,16 +536,30 @@ export default class ImportScanner {
         // as imported so we know to include them in the bundle if they
         // are lazy. Eager files and files that we have imported before do
         // not need to be scanned again. Lazy files that we have not
-        // imported before still need to be scanned, however.
+        // imported before still need to be scanned, however. Note that
+        // alreadyScanned will be "dynamic" (which is truthy) if the file
+        // has only been scanned because of a dynamic import(...).
         const alreadyScanned = ! depFile.lazy || depFile.imported;
 
         // Whether the file is eager or lazy, mark it as imported. For
         // lazy files, this makes the difference between being included in
         // or omitted from the bundle. For eager files, this just ensures
-        // we won't scan them again.
-        depFile.imported = true;
+        // we won't scan them again. If this scan began from a dynamic
+        // import(...), we set depFile.imported = "dynamic" unless it's
+        // already been set true.
+        depFile.imported = dynamic
+          ? depFile.imported || "dynamic"
+          : true;
 
-        if (! alreadyScanned) {
+        const needsToBeScanned = ! alreadyScanned ||
+          // If the file has already been scanned, but only because of a
+          // dynamic import(...), then it needs to be scanned again, so that
+          // we mark it and its dependencies as non-dynamic. This will be
+          // cheaper than before because we've already computed depFile.deps.
+          (alreadyScanned === "dynamic" &&
+           depFile.imported === true);
+
+        if (needsToBeScanned) {
           if (depFile.error) {
             // Since this file is lazy, it might never have been imported,
             // so any errors reported to InputFile#error were saved but
@@ -527,7 +568,7 @@ export default class ImportScanner {
             buildmessage.error(depFile.error.message,
                                depFile.error.info);
           } else {
-            this._scanFile(depFile);
+            this._scanFile(depFile, dynamic);
           }
         }
 
@@ -539,6 +580,8 @@ export default class ImportScanner {
         // The given path cannot be installed on this architecture.
         return;
       }
+
+      info.installPath = installPath;
 
       // If the module is not readable, _readModule may return
       // null. Otherwise it will return an object with .data, .dataString,
@@ -553,7 +596,7 @@ export default class ImportScanner {
       depFile.installPath = installPath;
       depFile.servePath = installPath;
       depFile.lazy = true;
-      depFile.imported = true;
+      depFile.imported = dynamic ? "dynamic" : true;
 
       // Append this file to the output array and record its index.
       this._addFile(absImportedPath, depFile);
@@ -574,7 +617,7 @@ export default class ImportScanner {
         return;
       }
 
-      this._scanFile(depFile);
+      this._scanFile(depFile, dynamic);
     });
   }
 
@@ -758,7 +801,7 @@ export default class ImportScanner {
   }
 
   // Called by this.resolver when a module identifier cannot be resolved.
-  _onMissing(id, absParentPath) {
+  _onMissing(id, absParentPath, forDynamicImport = false) {
     const isApp = ! this.name;
     const parentFile = this._getFile(absParentPath);
 
@@ -773,22 +816,25 @@ export default class ImportScanner {
             parentFile.deps) {
           parentFile.deps[stubId] = parentFile.deps[id];
         }
-        return this._resolve(stubId, absParentPath);
+        return this._resolve(stubId, absParentPath, forDynamicImport);
       }
     }
-
-    const possiblySpurious =
-      parentFile &&
-      parentFile.deps &&
-      has(parentFile.deps, id) &&
-      parentFile.deps[id].possiblySpurious;
 
     const info = {
       packageName: this.name,
       parentPath: absParentPath,
       bundleArch: this.bundleArch,
-      possiblySpurious,
+      possiblySpurious: false,
+      dynamic: false,
     };
+
+    if (parentFile &&
+        parentFile.deps &&
+        has(parentFile.deps, id)) {
+      const importInfo = parentFile.deps[id];
+      info.possiblySpurious = importInfo.possiblySpurious;
+      info.dynamic = importInfo.dynamic;
+    }
 
     // If the imported identifier is neither absolute nor relative, but
     // top-level, then it might be satisfied by a package installed in
@@ -810,8 +856,15 @@ export default class ImportScanner {
     }
   }
 
-  _addPkgJsonToOutput(pkgJsonPath, pkg) {
-    if (! this._getFile(pkgJsonPath)) {
+  _addPkgJsonToOutput(pkgJsonPath, pkg, forDynamicImport = false) {
+    const file = this._getFile(pkgJsonPath);
+
+    if (file) {
+      file.imported = forDynamicImport
+        ? file.imported || "dynamic"
+        : true;
+
+    } else {
       const data = new Buffer(map(pkg, (value, key) => {
         return `exports.${key} = ${JSON.stringify(value)};\n`;
       }).join(""));
@@ -827,7 +880,7 @@ export default class ImportScanner {
         servePath: relPkgJsonPath,
         hash: sha1(data),
         lazy: true,
-        imported: true,
+        imported: forDynamicImport ? "dynamic" : true,
       };
 
       this._addFile(pkgJsonPath, pkgFile);
