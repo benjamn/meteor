@@ -573,6 +573,14 @@ class File {
     // that is the argument to Assets.getBinary, to a Buffer that is its contents.
     this.assets = null;
 
+    // Information about how the file was imported, what its dependencies
+    // are, etc. Useful for dynamic imports and code splitting.
+    this.importInfo = options.importInfo || {
+      dynamic: false,
+      deps: {},
+      extensions: [".js", ".json"]
+    };
+
     this._contents = options.data || null; // contents, if known, as a Buffer
     this._hashOfContents = options.hash || null;
     this._hash = null;
@@ -677,7 +685,7 @@ class File {
 
   setTargetPathFromRelPath(relPath) {
     // XXX hack
-    if (relPath.match(/^packages\//) || relPath.match(/^assets\//)) {
+    if (relPath.match(/^(packages|assets|dynamic)\//)) {
       this.targetPath = relPath;
     } else {
       this.targetPath = files.pathJoin('app', relPath);
@@ -1115,7 +1123,12 @@ class Target {
             return;
           }
 
-          const f = new File({ info: 'resource ' + resource.servePath, data: resource.data, cacheable: false});
+          const f = new File({
+            info: 'resource ' + resource.servePath,
+            data: resource.data,
+            importInfo: resource.importInfo,
+            cacheable: false
+          });
 
           const relPath = stripLeadingSlash(resource.servePath);
           f.setTargetPathFromRelPath(relPath);
@@ -1194,7 +1207,8 @@ class Target {
       return source._minifiedFiles.map((file) => {
         const newFile = new File({
           info: 'minified js',
-          data: new Buffer(file.data, 'utf8')
+          data: new Buffer(file.data, 'utf8'),
+          importInfo: source._source.importInfo,
         });
         if (file.sourceMap) {
           newFile.setSourceMap(file.sourceMap, '/');
@@ -1434,6 +1448,8 @@ class ClientTarget extends Target {
 
     // Build up a manifest of all resources served via HTTP.
     const manifest = [];
+    const dynamic = {};
+
     eachResource((file, type) => {
       const manifestItem = {
         path: file.targetPath,
@@ -1479,7 +1495,16 @@ class ClientTarget extends Target {
 
       writeFile(file, builder);
 
-      manifest.push(manifestItem);
+      if (file.importInfo &&
+          file.importInfo.dynamic) {
+        dynamic[manifestItem.path] = {
+          sourceMap: manifestItem.sourceMap,
+          deps: file.importInfo.deps || {},
+          extensions: file.importInfo.extensions,
+        };
+      } else {
+        manifest.push(manifestItem);
+      }
     });
 
     ['head', 'body'].forEach((type) => {
@@ -1500,7 +1525,11 @@ class ClientTarget extends Target {
     // Control file
     const program = {
       format: "web-program-pre1",
-      manifest: manifest
+      manifest,
+    };
+
+    if (! _.isEmpty(dynamic)) {
+      program.dynamic = dynamic;
     }
 
     if (this.arch === 'web.cordova') {
@@ -1889,7 +1918,9 @@ class JsImage {
     var assetFilesBySha = {};
 
     // JavaScript sources
-    var load = [];
+    const load = [];
+    const dynamic = {};
+
     _.each(self.jsToLoad, function (item) {
       if (! item.targetPath) {
         throw new Error("No targetPath?");
@@ -1980,7 +2011,16 @@ class JsImage {
         });
       }
 
-      load.push(loadItem);
+      if (item.importInfo &&
+          item.importInfo.dynamic) {
+        dynamic[loadItem.path] = {
+          sourceMap: loadItem.sourceMap,
+          deps: item.importInfo.deps || {},
+          extensions: item.importInfo.extensions,
+        };
+      } else {
+        load.push(loadItem);
+      }
     });
 
     const rebuildDirs = Object.create(null);
@@ -2044,12 +2084,18 @@ class JsImage {
       )
     });
 
-    // Control file
-    builder.writeJson('program.json', {
+    const program = {
       format: "javascript-image-pre1",
       arch: self.arch,
       load: load
-    });
+    };
+
+    if (! _.isEmpty(dynamic)) {
+      program.dynamic = dynamic;
+    }
+
+    // Control file
+    builder.writeJson('program.json', program);
 
     return {
       controlFile: "program.json",
@@ -2148,7 +2194,8 @@ class JsImageTarget extends Target {
         nodeModulesDirectories: file.nodeModulesDirectories,
         assets: file.assets,
         sourceMap: file.sourceMap,
-        sourceMapRoot: file.sourceMapRoot
+        sourceMapRoot: file.sourceMapRoot,
+        importInfo: file.importInfo,
       });
     });
 
